@@ -21,11 +21,14 @@ import emission.storage.decorations.analysis_timeseries_queries as esda
 import emission.storage.timeseries.timequery as estt
 import emission.storage.timeseries.abstract_timeseries as esta
 
+import emission.net.api.usercache as enau
+
 import emission.core.get_database as edb
 import emission.core.wrapper.userlabel as ecul
 import emission.core.wrapper.rawtrip as ecwrt
 import emission.core.wrapper.section as ecwc
 import emission.core.wrapper.stop as ecws
+import emission.core.wrapper.entry as ecwe
 
 import emission.tests.storageTests.analysis_ts_common as etsa
 import emission.tests.common as etc
@@ -37,6 +40,7 @@ class TestTripQueries(unittest.TestCase):
     
     def tearDown(self):
         edb.get_analysis_timeseries_db().delete_many({'user_id': self.testUserId})
+        edb.get_usercache_db().delete_many({'user_id': self.testUserId})
 
     def create_fake_trip(self):
         return etsa.createNewTripLike(self, esda.RAW_TRIP_KEY, ecwrt.Rawtrip)
@@ -78,9 +82,9 @@ class TestTripQueries(unittest.TestCase):
         user_input = esdt.get_user_input_for_trip(esda.RAW_TRIP_KEY, self.testUserId, new_trip.get_id(), "manual/mode_confirm")
         self.assertIsNone(user_input)
 
-    def testUserInputForTripOneInput(self):
+    def testUserInputForTripOneInputFromCache(self):
         """
-        Test the case in which the user has not provided any inputs
+        Test the case in which the user has provided exactly one input
         """
         MODE_CONFIRM_KEY = "manual/mode_confirm"
 
@@ -88,13 +92,15 @@ class TestTripQueries(unittest.TestCase):
         new_mc = ecul.Userlabel()
         new_mc["start_ts"] = new_trip.data.start_ts + 1
         new_mc["end_ts"] = new_trip.data.end_ts + 1
-        ts = esta.TimeSeries.get_time_series(self.testUserId)
-        ts.insert_data(self.testUserId, MODE_CONFIRM_KEY, new_mc) 
-        
-        user_input = esdt.get_user_input_for_trip(esda.RAW_TRIP_KEY, self.testUserId,
-            new_trip.get_id(), MODE_CONFIRM_KEY)
+        new_mc["label"] = "roller_blading"
+        new_mce = ecwe.Entry.create_entry(self.testUserId, MODE_CONFIRM_KEY, new_mc)
+        new_mce["metadata"]["type"] = "message"
 
-        self.assertEqual(new_mc, user_input.data)
+        enau.sync_phone_to_server(self.testUserId, [new_mce])
+        
+        user_input = esdt.get_user_input_from_cache_series(self.testUserId, new_trip, MODE_CONFIRM_KEY)
+
+        self.assertEqual(new_mce, user_input)
 
     def testUserInputForTripOneInput(self):
         """
@@ -113,6 +119,42 @@ class TestTripQueries(unittest.TestCase):
             new_trip.get_id(), MODE_CONFIRM_KEY)
 
         self.assertEqual(new_mc, user_input.data)
+
+    def testUserInputForTripTwoInputFromCache(self):
+        """
+        Test the case in which the user has provided exactly one input
+        """
+        MODE_CONFIRM_KEY = "manual/mode_confirm"
+
+        new_trip = self.create_fake_trip()
+        new_mc = ecul.Userlabel()
+        new_mc["start_ts"] = new_trip.data.start_ts + 1
+        new_mc["end_ts"] = new_trip.data.end_ts + 1
+        new_mc["label"] = "roller_blading"
+        new_mce = ecwe.Entry.create_entry(self.testUserId, MODE_CONFIRM_KEY, new_mc)
+        new_mce["metadata"]["type"] = "message"
+
+        enau.sync_phone_to_server(self.testUserId, [new_mce])
+
+        user_input = esdt.get_user_input_from_cache_series(self.testUserId, new_trip, MODE_CONFIRM_KEY)
+
+        # WHen there is only one input, it is roller_blading
+        self.assertEqual(new_mce, user_input)
+        self.assertEqual(user_input.data.label, 'roller_blading')
+
+        new_mc["label"] = 'pogo_sticking'
+
+        new_mce = ecwe.Entry.create_entry(self.testUserId, MODE_CONFIRM_KEY, new_mc)
+        new_mce["metadata"]["type"] = "message"
+
+        enau.sync_phone_to_server(self.testUserId, [new_mce])
+
+        user_input = esdt.get_user_input_from_cache_series(self.testUserId, new_trip, MODE_CONFIRM_KEY)
+
+        # When it is overridden, it is pogo sticking
+        self.assertEqual(new_mce, user_input)
+        self.assertEqual(user_input.data.label, 'pogo_sticking')
+
 
     def testUserInputForTripTwoInput(self):
         """
@@ -160,12 +202,12 @@ class TestTripQueries(unittest.TestCase):
         self.assertEqual(len(ct_df), 4)
 
         # Now, let's load the mode_confirm and purpose_confirm objects
-        mode_confirm_list = json.load(open("emission/tests/data/real_examples/shankari_single_positional_indexer.dec-12.mode_confirm"),
-            object_hook=bju.object_hook)
+        with open("emission/tests/data/real_examples/shankari_single_positional_indexer.dec-12.mode_confirm") as mcfp:
+            mode_confirm_list = json.load(mcfp, object_hook=bju.object_hook)
         self.assertEqual(len(mode_confirm_list), 5)
 
-        purpose_confirm_list = json.load(open("emission/tests/data/real_examples/shankari_single_positional_indexer.dec-12.purpose_confirm"),
-            object_hook=bju.object_hook)
+        with open("emission/tests/data/real_examples/shankari_single_positional_indexer.dec-12.purpose_confirm") as pcfp:
+            purpose_confirm_list = json.load(pcfp, object_hook=bju.object_hook)
         self.assertEqual(len(purpose_confirm_list), 7)
 
         for mc in mode_confirm_list:

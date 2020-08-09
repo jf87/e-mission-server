@@ -22,7 +22,10 @@ def format(entry):
     fc.expand_metadata_times(metadata)
     formatted_entry.metadata = metadata
 
+    #logging.info('*** Motion Data write_ts: %d' % metadata.write_ts)
+    
     data = ad.AttrDict()
+
     if 'agb' in entry.data:
         data.type = ecwa.MotionTypes(entry.data.agb).value
     elif 'zzaEg' in entry.data:
@@ -31,8 +34,10 @@ def format(entry):
         data.type = ecwa.MotionTypes(entry.data.zzbjA).value
     elif 'ajO' in entry.data:
         data.type = ecwa.MotionTypes(entry.data.ajO).value
-    else:
+    elif 'zzaKM' in entry.data:
         data.type = ecwa.MotionTypes(entry.data.zzaKM).value
+    elif 'zzbhB' in entry.data:
+        data.type = ecwa.MotionTypes(entry.data.zzbhB).value
 
 
     if 'agc' in entry.data:
@@ -43,10 +48,14 @@ def format(entry):
         data.confidence = entry.data.zzbjB
     elif 'ajP' in entry.data:
         data.confidence = entry.data.ajP
-    else:
+    elif 'zzaKN' in entry.data:
         data.confidence = entry.data.zzaKN
+    elif 'zzbhC' in entry.data:
+        data.confidence = entry.data.zzbhC
 
-    data.ts = formatted_entry.metadata.write_ts
+    if 'ts' not in entry.data:
+        data.ts = formatted_entry.metadata.write_ts
+
     data.local_dt = formatted_entry.metadata.write_local_dt
     data.fmt_time = formatted_entry.metadata.write_fmt_time
     formatted_entry.data = data
