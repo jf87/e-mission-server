@@ -18,6 +18,7 @@ import pymongo
 import emission.core.get_database as edb
 from emission.core.get_database import get_client_db, get_section_db
 import emission.core.get_database as edb
+import emission.core.wrapper.user as ecwu
 
 def makeValid(client):
   client.clientJSON['start_date'] = str(datetime.now() + timedelta(days=-2))
@@ -38,7 +39,7 @@ def updateUserCreateTime(uuid):
   user.changeUpdateTs(timedelta(days = -20))
 
 def dropAllCollections(db):
-  collections = db.collection_names()
+  collections = db.list_collection_names()
   print("collections = %s" % collections)
   for coll in collections:
     if coll.startswith('system'):
@@ -99,11 +100,30 @@ def updateSections(testCase):
       testCase.uuid_list.append(curr_uuid)
       testCase.SectionsColl.save(section)
 
+def getRealExampleEmail(testObj):
+    return testObj.branch + "_" + testObj._testMethodName
+
+def fillExistingUUID(testObj):
+    userObj = ecwu.User.fromEmail(getRealExampleEmail(testObj))
+    print("Setting testUUID to %s" % userObj.uuid)
+    testObj.testUUID = userObj.uuid
+
+def createAndFillUUID(testObj):
+    if hasattr(testObj, "evaluation") and testObj.evaluation:
+        reg_email = getRealExampleEmail(testObj)
+        logging.info("registering email = %s" % reg_email)
+        user = ecwu.User.register(reg_email)
+        testObj.testUUID = user.uuid
+    else:
+        logging.info("No evaluation flag found, not registering email")
+        testObj.testUUID = uuid.uuid4()
+
 def setupRealExample(testObj, dump_file):
-    logging.info("Before loading, timeseries db size = %s" % edb.get_timeseries_db().count())
+    logging.info("Before loading from %s, timeseries db size = %s" %
+        (dump_file, edb.get_timeseries_db().estimated_document_count()))
     with open(dump_file) as dfp:
         testObj.entries = json.load(dfp, object_hook = bju.object_hook)
-        testObj.testUUID = uuid.uuid4()
+        createAndFillUUID(testObj)
         print("Setting up real example for %s" % testObj.testUUID)
         setupRealExampleWithEntries(testObj)
 
@@ -115,7 +135,7 @@ def setupRealExampleWithEntries(testObj):
         #                                                        entry["data"]["fmt_time"])
         edb.save(tsdb, entry)
         
-    logging.info("After loading, timeseries db size = %s" % edb.get_timeseries_db().count())
+    logging.info("After loading, timeseries db size = %s" % edb.get_timeseries_db().estimated_document_count())
     logging.debug("First few entries = %s" % 
                     [e["data"]["fmt_time"] if "fmt_time" in e["data"] else e["metadata"]["write_fmt_time"] for e in 
                         list(edb.get_timeseries_db().find({"user_id": testObj.testUUID}).sort("data.write_ts",
@@ -144,6 +164,7 @@ def setupIncomingEntries():
 def runIntakePipeline(uuid):
     # Move these imports here so that we don't inadvertently load the modules,
     # and any related config modules, before we want to
+    import emission.analysis.userinput.matcher as eaum
     import emission.analysis.intake.cleaning.filter_accuracy as eaicf
     import emission.storage.timeseries.format_hacks.move_filter_field as estfm
     import emission.analysis.intake.segmentation.trip_segmentation as eaist
@@ -152,12 +173,14 @@ def runIntakePipeline(uuid):
     import emission.analysis.intake.cleaning.clean_and_resample as eaicr
     import emission.analysis.classification.inference.mode.pipeline as eacimp
 
+    eaum.match_incoming_user_inputs(uuid)
     eaicf.filter_accuracy(uuid)
     eaist.segment_current_trips(uuid)
     eaiss.segment_current_sections(uuid)
     eaicl.filter_current_sections(uuid)
     eaicr.clean_and_resample(uuid)
     eacimp.predict_mode(uuid)
+    eaum.create_confirmed_objects(uuid)
 
 def configLogging():
     """
