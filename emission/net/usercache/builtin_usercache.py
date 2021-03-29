@@ -12,7 +12,7 @@ import pymongo
 
 # Our imports
 import emission.net.usercache.abstract_usercache as ucauc # ucauc = usercache.abstract_usercache
-from emission.core.get_database import get_usercache_db
+import emission.core.get_database as edb
 
 """
 Format of the usercache_db.
@@ -63,7 +63,7 @@ class BuiltinUserCache(ucauc.UserCache):
         self.key_query = lambda key: {"metadata.key": key};
         self.ts_query = lambda tq: BuiltinUserCache._get_ts_query(tq)
         self.type_query = lambda entry_type: {"metadata.type": entry_type}
-        self.db = get_usercache_db()
+        self.db = edb.get_usercache_db()
 
     @staticmethod
     def _get_ts_query(tq):
@@ -71,7 +71,7 @@ class BuiltinUserCache(ucauc.UserCache):
 
     @staticmethod
     def get_uuid_list():
-        return get_usercache_db().distinct("user_id")
+        return edb.get_usercache_db().distinct("user_id")
 
     def putDocument(self, key, value):
         """
@@ -132,7 +132,7 @@ class BuiltinUserCache(ucauc.UserCache):
         # the write timestamp, because we use the last_ts_processed to mark the
         # beginning of the entry for the next query. So let's sort by the
         # write_ts before returning.
-        retrievedMsgs = list(self.db.find(combo_query).sort("metadata.write_ts", pymongo.ASCENDING).limit(100000))
+        retrievedMsgs = list(self.db.find(combo_query).sort("metadata.write_ts", pymongo.ASCENDING).limit(edb.result_limit))
         logging.debug("Found %d messages in response to query %s" % (len(retrievedMsgs), combo_query))
         return retrievedMsgs
 
@@ -143,7 +143,7 @@ class BuiltinUserCache(ucauc.UserCache):
         """
         read_ts = time.time()
         combo_query = self._get_msg_query(None, None)
-        count = self.db.find(combo_query).count()
+        count = self.db.count_documents(combo_query)
         logging.debug("For %s, found %s messages in usercache" %
                       (self.user_id, count))
         return count
@@ -164,7 +164,7 @@ class BuiltinUserCache(ucauc.UserCache):
         return self.getKeyListForType("message")
 
     def getKeyListForType(self, message_type):
-        return self.db.find({"user_id": self.user_id, "metadata.type": message_type}).distinct("metadata.key")
+        return sorted(self.db.find({"user_id": self.user_id, "metadata.type": message_type}).distinct("metadata.key"))
 
     def clearObsoleteDocument(self, key):
         """
