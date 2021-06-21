@@ -81,6 +81,7 @@ ngsi_template = {
             "distance": "odala:distance",
             "duration": "odala:duration",
             "co2": "odala:co2",
+            "speed": "odala:speed",
         },
         "http://uri.etsi.org/ngsi-ld/v1/ngsi-ld-core-context.jsonld",
     ],
@@ -116,7 +117,8 @@ def create_payloads(is_df):
 
 def post_payloads(payloads):
     # url = 'http://cema.nlehd.de:2042/ngsi-ld/v1/entityOperations/upsert'
-    url = "http://cema.nlehd.de:2042/ngsi-ld/v1/entities"
+    # url = "http://cema.nlehd.de:2042/ngsi-ld/v1/entities"
+    url = "http://localhost:9090/ngsi-ld/v1/entities"
     headers = {"Content-Type": "application/ld+json"}
     for e in payloads:
         r = requests.post(url, data=json.dumps(e), headers=headers)
@@ -200,7 +202,10 @@ if __name__ == "__main__":
     new_data = False
     for user in all_users:
         ts = esta.TimeSeries.get_time_series(user["uuid"])
-        start = arrow.utcnow().float_timestamp - (3600 * 24)
+        start = arrow.get(
+            "2021-01-01"
+        ).timestamp  # arrow.utcnow().float_timestamp-(3600*6)
+        start = arrow.utcnow().float_timestamp - (3600 * 6)
         end = arrow.utcnow().float_timestamp
         tq = estt.TimeQuery("data.start_ts", start, end)
         is_df = ts.get_data_df("analysis/inferred_section", time_query=tq)
@@ -213,3 +218,5 @@ if __name__ == "__main__":
         post_payloads(payloads)
     if not new_data:
         print("Did not find any new data")
+    else:
+        print("Pushed new data")
