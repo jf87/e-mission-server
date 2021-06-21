@@ -18,3 +18,4 @@ conf/**/*.json
 *.ipynb_checkpoints*
 
 *.secret
+miniconda.sh
